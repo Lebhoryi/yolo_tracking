@@ -11,7 +11,7 @@ from yolox.utils import postprocess
 from yolox.utils.model_utils import fuse_model
 
 from boxmot.utils import logger as LOGGER
-from boxmot.tools.detectors.yolo_interface import YoloInterface
+from boxmot.engine.detectors.yolo_interface import YoloInterface
 
 # default model weigths for these model names
 YOLOX_ZOO = {
@@ -114,6 +114,7 @@ class YoloXStrategy(YoloInterface):
 
     def __init__(self, model, device, args):
 
+        self.ch = 3
         self.args = args
         self.imgsz = args.imgsz
         self.pt = False
