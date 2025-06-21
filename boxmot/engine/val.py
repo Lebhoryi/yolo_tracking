@@ -1,5 +1,7 @@
-
 # Mikel Broström 🔥 Yolo Tracking 🧾 AGPL-3.0 license
+
+import multiprocessing as mp
+mp.set_start_method("spawn", force=True)
 
 import argparse
 import subprocess
@@ -33,9 +35,9 @@ from boxmot.postprocessing.gsi import gsi
 from ultralytics import YOLO
 from ultralytics.data.build import load_inference_source
 
-from boxmot.tools.detectors import (get_yolo_inferer, default_imgsz,
+from boxmot.engine.detectors import (get_yolo_inferer, default_imgsz,
                                 is_ultralytics_model, is_yolox_model)
-from boxmot.tools.utils import convert_to_mot_format, write_mot_results, download_mot_eval_tools, download_mot_dataset, unzip_mot_dataset, eval_setup, split_dataset
+from boxmot.engine.utils import convert_to_mot_format, write_mot_results, download_mot_eval_tools, download_mot_dataset, unzip_mot_dataset, eval_setup, split_dataset
 from boxmot.appearance.reid.auto_backend import ReidAutoBackend
 from tqdm import tqdm
 
@@ -153,40 +155,35 @@ def generate_dets_embs(args: argparse.Namespace, y: Path, source: Path) -> None:
 
 def parse_mot_results(results: str) -> dict:
     """
-    Extracts COMBINED HOTA, MOTA, IDF1, AssA, and AssRe from MOTChallenge evaluation output.
+    Extracts COMBINED HOTA, MOTA, IDF1, AssA, AssRe, IDSW, and IDs from MOTChallenge evaluation output.
 
     Args:
         results (str): Full MOT evaluation output as a string.
 
     Returns:
-        dict: Dictionary with HOTA, MOTA, IDF1, AssA, and AssRe values.
+        dict: Dictionary with parsed metrics.
     """
+    metric_specs = {
+        'HOTA':   ('HOTA:',      {'HOTA': 0, 'AssA': 2, 'AssRe': 5}),
+        'MOTA':   ('CLEAR:',     {'MOTA': 0, 'IDSW': 12}),
+        'IDF1':   ('Identity:',  {'IDF1': 0}),
+        'IDs':    ('Count:',     {'IDs': 2}),
+    }
+
+    int_fields = {'IDSW', 'IDs'}
     metrics = {}
 
-    # --- HOTA block ---
-    hota_block = re.search(r'HOTA:.*?COMBINED\s+(.*?)\n', results, re.DOTALL)
-    if hota_block:
-        fields = hota_block.group(1).split()
-        if len(fields) >= 7:
-            metrics['HOTA'] = float(fields[0])
-            metrics['AssA'] = float(fields[2])
-            metrics['AssRe'] = float(fields[5])
-
-    # --- MOTA block ---
-    mota_block = re.search(r'CLEAR:.*?COMBINED\s+(.*?)\n', results, re.DOTALL)
-    if mota_block:
-        fields = mota_block.group(1).split()
-        if len(fields) >= 1:
-            metrics['MOTA'] = float(fields[0])
-
-    # --- IDF1 block ---
-    idf1_block = re.search(r'Identity:.*?COMBINED\s+(.*?)\n', results, re.DOTALL)
-    if idf1_block:
-        fields = idf1_block.group(1).split()
-        if len(fields) >= 1:
-            metrics['IDF1'] = float(fields[0])
+    for section, fields_map in metric_specs.values():
+        match = re.search(fr'{re.escape(section)}.*?COMBINED\s+(.*?)\n', results, re.DOTALL)
+        if match:
+            fields = match.group(1).split()
+            for key, idx in fields_map.items():
+                if idx < len(fields):
+                    value = fields[idx]
+                    metrics[key] = int(value) if key in int_fields else float(value)
 
     return metrics
+
 
 
 
@@ -384,10 +381,10 @@ def run_trackeval(opt: argparse.Namespace) -> dict:
     seq_paths, save_dir, MOT_results_folder, gt_folder = eval_setup(opt, opt.val_tools_path)
     trackeval_results = trackeval(opt, seq_paths, save_dir, MOT_results_folder, gt_folder)
     hota_mota_idf1 = parse_mot_results(trackeval_results)
-    if opt.verbose:
-        LOGGER.info(trackeval_results)
+    if opt.ci:
         with open(opt.tracking_method + "_output.json", "w") as outfile:
             outfile.write(json.dumps(hota_mota_idf1))
+    LOGGER.info(trackeval_results)
     LOGGER.info(json.dumps(hota_mota_idf1))
     return hota_mota_idf1
 

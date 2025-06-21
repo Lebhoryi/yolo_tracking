@@ -6,6 +6,7 @@ import threading
 from pathlib import Path
 
 import numpy as np
+import multiprocessing as mp
 
 # global logger
 from loguru import logger
@@ -18,16 +19,22 @@ BOXMOT = ROOT / "boxmot"
 TOML = ROOT / "pyproject.toml"
 TRACKER_CONFIGS = ROOT / "boxmot" / "configs"
 
-EXAMPLES = BOXMOT / "tracking"
-WEIGHTS = BOXMOT / "tools" / "weights"
+EXAMPLES = BOXMOT / "engine"
+WEIGHTS = BOXMOT / "engine" / "weights"
 
 NUM_THREADS = min(8, max(1, os.cpu_count() - 1))
 
+def _is_main_process(record):
+    return mp.current_process().name == "MainProcess"
 
-def only_main_thread(record):
-    # Check if the current thread is the main thread
-    return threading.current_thread().name == "MainThread"
-
-
-logger.remove()
-logger.add(sys.stderr, filter=only_main_thread, colorize=True, level="INFO")
+def configure_logging():
+    # this will remove *all* existing handlers and then add yours
+    logger.configure(handlers=[
+        {
+            "sink": sys.stderr,
+            "level":    "INFO",
+            "filter":   _is_main_process,
+        }
+    ])
+    
+configure_logging()
