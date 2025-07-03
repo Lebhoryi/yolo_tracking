@@ -9,7 +9,7 @@ from ultralytics.engine.results import Results
 from ultralytics.models.yolo.detect import DetectionPredictor
 
 from boxmot.utils import logger as LOGGER
-from boxmot.tools.detectors.yolo_interface import YoloInterface
+from boxmot.engine.detectors.yolo_interface import YoloInterface
 
 
 class RFDETRStrategy(YoloInterface):
@@ -18,6 +18,7 @@ class RFDETRStrategy(YoloInterface):
     fp16 = False
     triton = False
     names = COCO_CLASSES
+    ch = 3
 
     def __init__(self, model, device, args):
         self.args = args
