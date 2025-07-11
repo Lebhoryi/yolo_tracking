@@ -1,10 +1,11 @@
 import subprocess
 from pathlib import Path
-from typing import Optional
-
-import pkg_resources
+from typing import Iterable, Optional
 
 from boxmot.utils import logger as LOGGER
+from packaging.requirements import Requirement
+from importlib.metadata import version, PackageNotFoundError
+
 
 REQUIREMENTS_FILE = Path("requirements.txt")
 
@@ -16,38 +17,43 @@ class RequirementsChecker:
         Otherwise we'll read requirements_file and pip-install missing packages.
         """
         self.group = group
-        self.requirements_file = requirements_file
 
-    def check_requirements(self):
-        if self.group:
-            self._sync_group(self.group)
-        else:
-            self._check_from_requirements()
+    def check_packages(self, requirements: Iterable[str], cmds: Optional[list[str]] = None):
+        """
+        Check and install packages specified by requirement strings, e.g.
+        ["foo", "bar>=1.2"].
 
-    def _check_from_requirements(self):
-        # parse requirements.txt
-        with self.requirements_file.open() as f:
-            reqs = pkg_resources.parse_requirements(f)
-        self._check_packages(reqs)
+        :param requirements: iterable of requirement specifiers as strings
+        :param cmds: extra pip args (e.g. ["--upgrade"]).
+        """
+        # turn each string into a Requirement
+        specs = [Requirement(r) for r in requirements]
 
-    def check_packages(self, requirements, cmds=[]):
-        missing = []
-        for r in requirements:
+        missing: list[str] = []
+        for req in specs:
+            name = req.name
             try:
-                pkg_resources.require(str(r))
-            except Exception as e:
-                LOGGER.error(f"{e}")
-                missing.append(str(r))
+                inst_ver = version(name)
+            except PackageNotFoundError:
+                LOGGER.error(f"Package {name!r} is not installed.")
+                missing.append(str(req))
+            else:
+                if req.specifier and not req.specifier.contains(inst_ver, prereleases=True):
+                    LOGGER.error(
+                        f"{name!r} has version {inst_ver} which does not satisfy {req.specifier}."
+                    )
+                    missing.append(str(req))
 
         if missing:
             self.install_packages(missing, cmds)
 
-    def install_packages(self, packages, cmds=[]):
+    def install_packages(self, packages, extra_pip_args=None):
         try:
             LOGGER.warning(
-                f"\nMissing packages: {', '.join(packages)}\nAttempting installation..."
+                f"\nMissing or mismatched packages: {', '.join(packages)}\n"
+                "Attempting installation..."
             )
-            pip_cmd = ["uv", "pip", "install", "--no-cache-dir"] + cmds + packages
+            pip_cmd = ["uv", "pip", "install", "--no-cache-dir"] + (extra_pip_args or []) + packages
             subprocess.check_call(pip_cmd)
             LOGGER.info("All the missing packages were installed successfully.")
         except Exception as e:
@@ -84,7 +90,7 @@ class RequirementsChecker:
 if __name__ == "__main__":
     # Example usages:
     # 1) to install a tflite group:
-    RequirementsChecker(group="tflite").check_requirements()
+    RequirementsChecker.sync_group_or_extra(group="tflite")
 
     # 2) to fall back on a requirements.txt:
     # RequirementsChecker().check_requirements()

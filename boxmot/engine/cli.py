@@ -2,7 +2,7 @@
 
 import argparse
 from pathlib import Path
-from boxmot.utils import ROOT, WEIGHTS, TRACKER_CONFIGS, logger as LOGGER, EXAMPLES
+from boxmot.utils import ROOT, WEIGHTS, TRACKER_CONFIGS, logger as LOGGER, TRACKEVAL
 
 
 def main():
@@ -18,6 +18,8 @@ def main():
         default=[WEIGHTS / 'osnet_x0_25_msmt17.pt'],
         help='one or more ReID model weights (only for generate/eval/tune)'
     )
+    eval_parent.add_argument('--classes', nargs='+', type=int,
+        default=[0], help='filter by class indices')
 
     # Common arguments for all commands (flags only, no positionals)
     common_parser = argparse.ArgumentParser(add_help=False, conflict_handler='resolve')
@@ -35,7 +37,7 @@ def main():
     )
     common_parser.add_argument('--imgsz', '--img-size', nargs='+', type=int,
                                default=None, help='inference size h,w')
-    common_parser.add_argument('--fps', type=int, default=None,
+    common_parser.add_argument('--fps', type=int, default=30,
                                help='video frame-rate')
     common_parser.add_argument('--conf', type=float, default=0.01,
                                help='min confidence threshold')
@@ -43,7 +45,7 @@ def main():
                                help='IoU threshold for NMS')
     common_parser.add_argument('--device', default='', help='cuda device(s), e.g. 0 or 0,1,2,3 or cpu')
     common_parser.add_argument('--classes', nargs='+', type=int,
-                               default=[0], help='filter by class indices')
+                               help='filter by class indices')
     common_parser.add_argument('--project', type=Path, default=ROOT / 'runs',
                                help='save results to project/name')
     common_parser.add_argument('--name', default='', help='save results to project/name')
@@ -76,7 +78,7 @@ def main():
                                default=["HOTA", "MOTA", "IDF1"],
                                help='objectives for tuning: HOTA, MOTA, IDF1')
     common_parser.add_argument('--val-tools-path', type=Path,
-                               default=EXAMPLES / 'val_utils',
+                               default=TRACKEVAL,
                                help='where to clone trackeval')
     common_parser.add_argument('--split-dataset', action='store_true',
                                help='use second half of dataset')
@@ -106,16 +108,10 @@ def main():
     # Sub-commands inherit their respective flags
     sub.add_parser('track', parents=[common_parser], help='Run tracking only')
     sub.add_parser(
-        'generate-dets-embs',
+        'generate',
         parents=[common_parser, eval_parent],
         conflict_handler='resolve',
         help='Generate detections and embeddings'
-    )
-    sub.add_parser(
-        'generate-mot-results',
-        parents=[common_parser, eval_parent],
-        conflict_handler='resolve',
-        help='Generate MOT evaluation results'
     )
     sub.add_parser(
         'eval',
@@ -142,19 +138,19 @@ def main():
     args.benchmark, args.split = source_path.parent.name, source_path.name
 
     if args.command == 'track':
-        from boxmot.tools.track import main as run_track
+        from boxmot.engine.track import main as run_track
         run_track(args)
-    elif args.command == 'generate-dets-embs':
-        from boxmot.tools.val import run_generate_dets_embs
+    elif args.command == 'generate':
+        from boxmot.engine.val import run_generate_dets_embs
         run_generate_dets_embs(args)
-    elif args.command == 'generate-mot-results':
-        from boxmot.tools.val import run_generate_mot_results
-        run_generate_mot_results(args)
+    # trackeval only support single class evaluation in its current setup
     elif args.command in ('eval', 'all'):
-        from boxmot.tools.val import main as run_eval
+        from boxmot.engine.val import main as run_eval
+        args.classes = [0]
         run_eval(args)
     elif args.command == 'tune':
-        from boxmot.tools.evolve import main as run_tuning
+        from boxmot.engine.evolve import main as run_tuning
+        args.classes = [0]
         run_tuning(args)
 
 
